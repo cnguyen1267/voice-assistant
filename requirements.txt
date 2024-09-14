@@ -1,2 +1,5 @@
 faster-whisper
 torch
+pyaudio
+webrtcvad
+numpy
