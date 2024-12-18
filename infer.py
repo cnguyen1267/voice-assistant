@@ -28,7 +28,7 @@ p = pyaudio.PyAudio()
 
 # Initialize VAD
 vad = webrtcvad.Vad()
-vad.set_mode(1)  # 0: least aggressive, 3: most aggressive
+vad.set_mode(2)  # 0: least aggressive, 3: most aggressive
 
 # Queue to hold audio frames
 audio_queue = queue.Queue()
@@ -76,9 +76,7 @@ def vad_processor(audio_q, segments_q):
                 speech_end = time.time()
                 # Combine frames
                 audio_data = b"".join(frames)
-                # If speech duration is greater than 0.5s, add to queue
-                if (speech_end - speech_start) >= 0.5:
-                    segments_q.put(audio_data)
+                segments_q.put(audio_data)
                 frames = []
 
         total_frames += 1
@@ -97,6 +95,8 @@ def transcribe_segments(segments_q):
         segments, info = model.transcribe(audio_np, beam_size=5, language=None)
         
         # P < 0.5 prob just silence
+        if info.language_probability < 0.5:
+            continue
 
         print("Detected language '%s' with probability %f" % (info.language, info.language_probability))
         for segment in segments:
