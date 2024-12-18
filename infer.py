@@ -42,6 +42,10 @@ def audio_capture(stream, audio_q):
     except Exception as e:
         print(f"Error capturing audio: {e}")
 
+def is_above_energy_threshold(frame, threshold=300):
+    audio = np.frombuffer(frame, dtype=np.int16)
+    return np.mean(np.abs(audio)) > threshold
+
 # Function to process audio frames and perform VAD
 def vad_processor(audio_q, segments_q):
     frames = []
@@ -54,7 +58,11 @@ def vad_processor(audio_q, segments_q):
         frame = audio_q.get()
         if frame is None:
             break
-
+       
+        # Optimize speech check
+        if not is_above_energy_threshold(frame, threshold=300):
+            continue
+        
         is_speech = vad.is_speech(frame, RATE)
 
         if is_speech:
@@ -68,7 +76,9 @@ def vad_processor(audio_q, segments_q):
                 speech_end = time.time()
                 # Combine frames
                 audio_data = b"".join(frames)
-                segments_q.put(audio_data)
+                # If speech duration is greater than 0.5s, add to queue
+                if (speech_end - speech_start) >= 0.5:
+                    segments_q.put(audio_data)
                 frames = []
 
         total_frames += 1
@@ -85,6 +95,8 @@ def transcribe_segments(segments_q):
 
         # Transcribe using faster_whisper
         segments, info = model.transcribe(audio_np, beam_size=5, language=None)
+        
+        # P < 0.5 prob just silence
 
         print("Detected language '%s' with probability %f" % (info.language, info.language_probability))
         for segment in segments:
