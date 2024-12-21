@@ -28,7 +28,7 @@ p = pyaudio.PyAudio()
 
 # Initialize VAD
 vad = webrtcvad.Vad()
-vad.set_mode(2)  # 0: least aggressive, 3: most aggressive
+vad.set_mode(1)  # 0: least aggressive, 3: most aggressive
 
 # Queue to hold audio frames
 audio_queue = queue.Queue()
@@ -42,44 +42,37 @@ def audio_capture(stream, audio_q):
     except Exception as e:
         print(f"Error capturing audio: {e}")
 
-def is_above_energy_threshold(frame, threshold=300):
-    audio = np.frombuffer(frame, dtype=np.int16)
-    return np.mean(np.abs(audio)) > threshold
-
 # Function to process audio frames and perform VAD
 def vad_processor(audio_q, segments_q):
     frames = []
     in_speech = False
     speech_start = 0
+    silence_duration = 5.0
     frame_duration_sec = FRAME_DURATION / 1000.0
-    total_frames = 0
 
     while True:
         frame = audio_q.get()
         if frame is None:
             break
-       
-        # Optimize speech check
-        if not is_above_energy_threshold(frame, threshold=300):
-            continue
-        
+
         is_speech = vad.is_speech(frame, RATE)
+        current_time = time.time()
+
 
         if is_speech:
             if not in_speech:
                 in_speech = True
-                speech_start = time.time()
+                speech_start = current_time
             frames.append(frame)
+            last_speech_time = current_time
+
         else:
-            if in_speech:
+            if in_speech and current_time - last_speech_time > silence_duration:
                 in_speech = False
-                speech_end = time.time()
                 # Combine frames
                 audio_data = b"".join(frames)
                 segments_q.put(audio_data)
                 frames = []
-
-        total_frames += 1
 
 # Function to transcribe audio segments
 def transcribe_segments(segments_q):
@@ -92,10 +85,9 @@ def transcribe_segments(segments_q):
         audio_np = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
 
         # Transcribe using faster_whisper
-        segments, info = model.transcribe(audio_np, beam_size=5, language=None)
-        
-        # P < 0.5 prob just silence
-        if info.language_probability < 0.5:
+        segments, info = model.transcribe(audio_np, beam_size=1, language=None)
+
+        if info.language_probability < 0.9:
             continue
 
         print("Detected language '%s' with probability %f" % (info.language, info.language_probability))
