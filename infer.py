@@ -86,6 +86,9 @@ def transcribe_segments(segments_q):
         # Transcribe using faster_whisper
         segments, info = model.transcribe(audio_np, beam_size=5, language=None)
 
+        if info.language_probability < 0.9:
+            continue
+
         print("Detected language '%s' with probability %f" % (info.language, info.language_probability))
         for segment in segments:
             print("[%.2fs -> %.2fs] %s" % (segment.start, segment.end, segment.text))
